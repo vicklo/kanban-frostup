@@ -1,41 +1,130 @@
-<script setup lang="ts">
+<template>
+  <div class="flex">
+    <div class="w-full max-w-xs m-2 p-4 min-w-80">
+      <Form @updateTask="updateTask($event)" />
+    </div>
+    <div v-for="(item, index) in lanes" :key="index" class="p-4 m-2">
+      <div class="bg-slate-500 text-white p-2 min-w-32 rounded">
+        {{ item }}
+      </div>
+      <div class="grid grid-rows-2  min-h-80 bg-slate-50" @drop="onDrop($event, index)" @dragover.prevent
+           @dragenter.prevent>
+        <Card
+          v-for="(task, index) in items" v-show="item === task.lane"
+          :key="index"
+          :task="task"
+          draggable="true"
+          @dragstart="startDrag($event, task)" />
+      </div>
+    </div>
+  </div>
+
+</template>
+
+<script lang="ts" setup>
 import { Ref, ref } from 'vue';
 import { io } from 'socket.io-client';
+import { Task } from './lib/task.ts';
+import Form from './components/Form.vue';
+import Card from './components/Card.vue';
 
-const socket = io('localhost:3000'); 
+const socket = io('localhost:3000');
+
+/*
+De logica voor startDrag/onDrop ziet er netjes uit.
+Het is duidelijk wat er gebeurt en het is makkelijk te begrijpen.
+
+Wat ik wel heb moeten doen is dit component opdelen in meerdere componenten. (Form en Card)
+Dit is omdat het component anders te groot wordt en het moeilijk wordt om te begrijpen wat er gebeurt.
+
+Daarnaast zie ik ook dat de "lanes" verdwijnen. Meestal worden de lanes vooraf gedefinieerd en niet dynamisch aangepast. Bijvoorbeeld "Todo", "In progress", "Done".
+Dit mistte ook in de opdracht, dus niet perse een "minpunt".
+
+Er gebeurd ook veel magie met de state. Ik zie dat de state wordt aangepast in de socket.on('update') functie. Dit is niet heel duidelijk en kan voor verwarring zorgen.
+
+Een structuur als deze zou je applicatie een stuk duidelijker maken:
+Je hoeft dan niet te zoeken waar de state wordt aangepast en je weet precies waar je moet zijn om de state aan te passen.
+Enige nadeel van dit is dat je niet heel makkelijk "Lanes" kan toevoegen. Maar dit is meestal ook niet nodig aangezien je dit vooraf meestal doet.
+{
+  lanes: [
+    {
+      name: 'Todo',
+      tasks: [
+        {
+          id: 1,
+          name: 'Task 1',
+        },
+      ],
+    },
+    {
+      name: 'In progress',
+      tasks: [
+        {
+          id: 2,
+          name: 'Task 2',
+        },
+      ],
+    },
+  ],
+}
+
+Voorbeeld DB model: (dit is wel een stuk complexer)
+Organization -> Projects -> Lanes -> Tasks
+
+model Organization {
+  name: string;
+  projects: Project[];
+}
+
+model Project {
+  name: string;
+  lanes: Lane[];
+}
+
+model Lane {
+  name: string;
+  tasks: Task[];
+}
+
+model Task {
+  name: string;
+  description: string;
+  lane: Lane;
+  assignee?: User;
+}
+
+model User {
+  name: string;
+  tasks: Task[];
+}
+ */
 
 socket.on('onconnect', (data) => {
   items.value = data;
-  items.value.forEach(x =>
-  {
-    if(!lanes.value.includes(x.lane))
-    {
+  items.value.forEach(x => {
+    if (!lanes.value.includes(x.lane)) {
       lanes.value.push(x.lane);
     }
-  })
+  });
 });
 
 socket.on('update', (data) => {
   let added = false;
-  const newList:task[] = [];
-  const newlanes: string[]= [];
+  const newList: Task[] = [];
+  const newlanes: string[] = [];
   items.value.forEach(t => {
-    if(t.id === data.id)
-    {
+    if (t.id === data.id) {
       t = data;
-      added = true
+      added = true;
     }
-    if(!newlanes.includes(t.lane))
-    {
+    if (!newlanes.includes(t.lane)) {
       newlanes.push(t.lane);
     }
-    newList.push(t)
+    newList.push(t);
   });
-  if(!added)
-  {
-    newList.push(data)
-    if(!newlanes.includes(data.lane))
-    {
+  if (!added) {
+    newList.push(data);
+    if (!newlanes.includes(data.lane)) {
       newlanes.push(data.lane);
     }
   }
@@ -43,117 +132,31 @@ socket.on('update', (data) => {
   lanes.value = newlanes;
 });
 
-function updateTask(task:task)
-{
+function updateTask(task: Task) {
   socket.emit('update', task);
 }
 
+const items: Ref<Task[]> = ref(
+  []);
+const lanes: Ref<string[]> = ref([]);
 
-interface task {
-  id: number;
-  title: string;
-  priority: string;
-  description: string;
-  lane: string;
-}
-const items: Ref<task[]> = ref(
-  [
-])
-const lanes: Ref<string[]> = ref([])
-const newTask: Ref<task> = ref({id:0,title:"",description:"",lane:"",priority:""})
-
-
-items.value.forEach(x =>
-{
-  if(!lanes.value.includes(x.lane))
-  {
+items.value.forEach(x => {
+  if (!lanes.value.includes(x.lane)) {
     lanes.value.push(x.lane);
   }
-})
-function startDrag(evt:any, item:task) {
-      evt.dataTransfer.dropEffect = 'move'
-      evt.dataTransfer.effectAllowed = 'move'
-      evt.dataTransfer.setData('item', JSON.stringify(item))
+});
+
+function startDrag(evt: any, item: Task) {
+  evt.dataTransfer.dropEffect = 'move';
+  evt.dataTransfer.effectAllowed = 'move';
+  evt.dataTransfer.setData('item', JSON.stringify(item));
 }
-function onDrop(evt, laneIndex: number) {
-      const lane:string = lanes.value[laneIndex]
-      const draggedTask: task = JSON.parse(evt.dataTransfer.getData('item'))
-      draggedTask.lane = lane;
-      updateTask(draggedTask);
+
+function onDrop(evt: any, laneIndex: number) {
+  const lane: string = lanes.value[laneIndex];
+  const draggedTask: Task = JSON.parse(evt.dataTransfer.getData('item'));
+  draggedTask.lane = lane;
+  updateTask(draggedTask);
 }
 
 </script>
-
-<template>
-<div class="flex">
-  <div class="w-full max-w-xs m-2 p-4 min-w-80">
-  <form class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
-    <div class="mb-4">
-      <label class="block text-gray-700 text-sm font-bold mb-2" for="username">
-        Title
-      </label>
-      <input v-model="newTask.title" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username">
-    </div>
-
-    <div class="mb-4">
-      <label class="block text-gray-700 text-sm font-bold mb-2" for="username">
-        Description
-      </label>
-      <input v-model="newTask.description" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username">
-    </div>
-
-    <div class="mb-4">
-      <label class="block text-gray-700 text-sm font-bold mb-2" for="username">
-        Priority
-      </label>
-      <select v-model="newTask.priority" class="bg-white w-full p-2 border rounded">
-        <option>Low</option>
-        <option>Medium</option>
-        <option>High</option>
-      </select>
-    </div>
-
-    <div class="mb-4">
-      <label class="block text-gray-700 text-sm font-bold mb-2" for="username">
-        Lane
-      </label>
-      <input v-model="newTask.lane" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="username" type="text" placeholder="Username">
-    </div>
-
-    <div class="flex items-center justify-between">
-      <button @click="updateTask(newTask)" class="bg-blue-500 hover:bg-blue-700 hover:text-white  font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="button">
-        Add
-      </button>
-    </div>
-  </form>
-</div>
-  <div v-for="(item, index) in lanes" :key="index" class="p-4 m-2">
-    <div  class="bg-slate-500 text-white p-2 min-w-32 rounded"> 
-      {{ item }}
-    </div>
-    <div class="grid grid-rows-2  min-h-80 bg-slate-50" @drop="onDrop($event, index)"   @dragover.prevent @dragenter.prevent> 
-      <div
-        v-for="(task, index) in items" :key="index"
-        v-show="item === task.lane"
-        class="drag-el p-2 m-2 rounded bg-slate-200 min-w-40" 
-        draggable="true" @dragstart="startDrag($event, task)">
-        <div class="px-6 py-4 text-left">
-            <p class="font-bold text-xl mb-2 text-base">{{ task.title }}</p>
-            <p class="text-gray-700 text-base">
-              {{ task.description }}
-            </p>
-          </div>
-          <div class="px-6 pt-4 pb-2 ">
-            <span class="inline-block bg-gray-100 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2">{{ task.priority }}</span>
-          </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-</template>
-
-<style scoped>
-
-
-</style>
